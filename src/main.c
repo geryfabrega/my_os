@@ -4,65 +4,9 @@
 #include <limine.h>
 #include "font.h"
 
-
 // Below this line we experiment
 
-extern char _binary_font_psf_start[];
-
-#define PIXEL uint32_t   /* pixel pointer */
-
 uint16_t *unicode;
-
-
-void putchar(
-    /* note that this is int, not char as it's a unicode character */
-    unsigned short int c,
-    /* cursor position on screen, in characters not in pixels */
-    int cx, int cy,
-    /* foreground and background colors, say 0xFFFFFF and 0x000000 */
-    uint32_t fg, uint32_t bg)
-{
-    /* cast the address to PSF header struct */
-    PSF_font *font = (PSF_font*)&_binary_font_psf_start;
-    
-    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
-    volatile uint32_t *fb_ptr = framebuffer->address;
-    
-    /* we need to know how many bytes encode one row */
-    int bytesperline=(font->width+7)/8;
-    /* unicode translation */
-    if(unicode != NULL) {
-        c = unicode[c];
-    }
-    /* get the glyph for the character. If there's no
-       glyph for a given character, we'll display the first glyph. */
-    unsigned char *glyph =
-     (unsigned char*)&_binary_font_psf_start +
-     font->headersize +
-     (c>0&&c<font->numglyph?c:0)*font->bytesperglyph;
-    /* calculate the upper left corner on screen where we want to display.
-       we only do this once, and adjust the offset later. This is faster. */
-    int offs =
-        (cy * font->height * framebuffer->pitch) +
-        (cx * (font->width + 1) * sizeof(PIXEL));
-    /* finally display pixels according to the bitmap */
-    int x,y, line,mask;
-    for(y=0;y<font->height;y++){
-        /* save the starting position of the line */
-        line=offs;
-        mask=1<<(font->width-1);
-        /* display a row */
-        for(x=0;x<font->width;x++){
-            *((PIXEL*)(fb_ptr + line)) = *((unsigned int*)glyph) & mask ? fg : bg;
-            /* adjust to the next pixel */
-            mask >>= 1;
-            line += sizeof(PIXEL);
-        }
-        /* adjust to the next line */
-        glyph += bytesperline;
-        offs  += framebuffer->pitch;
-    }
-}
 
 // Above this line we are experimenting
 
@@ -169,7 +113,7 @@ extern char *fb;
 /* number of bytes in each line, it's possible it's not screen width * bytesperpixel! */
 extern int scanline;
 /* import our font that's in the object file we've created above */
-extern char _binary_font_start[];
+extern char _binary_font_psf_start[];
 
 #define PIXEL uint32_t   /* pixel pointer */
  
@@ -182,6 +126,10 @@ void putchar(
     uint32_t fg, uint32_t bg)
 {
     /* cast the address to PSF header struct */
+
+    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
+    volatile uint32_t *fb_ptr = framebuffer->address;
+
     PSF_font *font = (PSF_font*)&_binary_font_psf_start;
     /* we need to know how many bytes encode one row */
     int bytesperline=(font->width+7)/8;
@@ -198,7 +146,7 @@ void putchar(
     /* calculate the upper left corner on screen where we want to display.
        we only do this once, and adjust the offset later. This is faster. */
     int offs =
-        (cy * font->height * scanline) +
+        (cy * font->height * framebuffer->pitch) +
         (cx * (font->width + 1) * sizeof(PIXEL));
     /* finally display pixels according to the bitmap */
     int x,y, line,mask;
@@ -208,14 +156,14 @@ void putchar(
         mask=1<<(font->width-1);
         /* display a row */
         for(x=0;x<font->width;x++){
-            *((PIXEL*)(fb + line)) = *((unsigned int*)glyph) & mask ? fg : bg;
+            *((PIXEL*)(fb_ptr + line)) = *((unsigned int*)glyph) & mask ? fg : bg;
             /* adjust to the next pixel */
             mask >>= 1;
             line += sizeof(PIXEL);
         }
         /* adjust to the next line */
         glyph += bytesperline;
-        offs  += scanline;
+        offs  += framebuffer->pitch;
     }
 }
 
@@ -241,6 +189,7 @@ void kmain(void) {
     int c = 18;
     printRC(r,c);
     printRC(69,420);
+    putchar(0,0,0,0xffffff,0x000000);
     // Note: we assume the framebuffer model is RGB with 32-bit pixels.
     for (size_t i = 0; i < 100; i++) {
         volatile uint32_t *fb_ptr = framebuffer->address;

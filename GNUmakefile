@@ -31,7 +31,7 @@ ifeq ($(TOOLCHAIN),llvm)
 endif
 
 # User controllable C flags.
-CFLAGS := -g -O2 -pipe
+CFLAGS := -g -O2 -pipe -O0
 
 # User controllable C preprocessor flags. We set none by default.
 CPPFLAGS :=
@@ -133,7 +133,7 @@ obj/%.S.o: %.S GNUmakefile
 # Compilation rules for *.asm (nasm) files.
 obj/%.asm.o: %.asm GNUmakefile
 	mkdir -p "$(dir $@)"
-	nasm $(NASMFLAGS) $< -o $@
+	nasm $(NASMFLAGS) $< -o -0o $@
 
 # Remove object files and the final executable.
 .PHONY: clean

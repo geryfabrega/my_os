@@ -113,11 +113,33 @@ extern char *fb;
 /* number of bytes in each line, it's possible it's not screen width * bytesperpixel! */
 extern int scanline;
 /* import our font that's in the object file we've created above */
-extern char _binary_font_psf_start[];
+extern const unsigned char _binary_font_psf_start[];
 
+extern const unsigned char _binary_font_psf_end[];
+
+extern const unsigned char _binary_font_psf_size;
 #define PIXEL uint32_t   /* pixel pointer */
- 
-void putchar(
+
+// helper PS1 Sruct
+
+typedef struct {
+    uint32_t width;            // always 8 for PSF1
+    uint32_t height;           // header->characterSize
+    uint32_t numglyph;         // (fontMode & 1) ? 512 : 256
+    uint32_t bytes_per_glyph;  // == height
+    const uint8_t *glyphs;     // start of glyph bitmaps (immediately after header)
+} PSF1_Font;
+
+
+static inline uint32_t psf1_index_ascii(const PSF1_Font *F, unsigned char ch){
+    return (uint32_t)ch % F->numglyph;
+}
+
+static inline const uint8_t *psf1_glyph_ptr(const PSF1_Font *F, uint32_t idx){
+    return F->glyphs + (uint64_t)idx * (uint64_t)F->bytes_per_glyph;
+}
+
+static const PSF1_Font *putchar(
     /* note that this is int, not char as it's a unicode character */
     unsigned short int c,
     /* cursor position on screen, in characters not in pixels */
@@ -126,45 +148,58 @@ void putchar(
     uint32_t fg, uint32_t bg)
 {
     /* cast the address to PSF header struct */
+    static PSF1_Font F;
 
     struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
-    volatile uint32_t *fb_ptr = framebuffer->address;
+    //volatile uint32_t *fb_ptr = framebuffer->address;
 
-    PSF_font *font = (PSF_font*)&_binary_font_psf_start;
-    /* we need to know how many bytes encode one row */
-    int bytesperline=(font->width+7)/8;
-    /* unicode translation */
-    if(unicode != NULL) {
-        c = unicode[c];
+    const uint8_t *base = _binary_font_psf_start;
+    // we use uint8_t as a generic way to point to a size of 1 byte since we are reading raw binary. 
+    // Another pattenr is to use const unsigned char
+
+    PSF1_Header *header = (PSF1_Header *)base;
+    PSF_font *font_data = _binary_font_psf_start + sizeof(PSF1_Header);
+
+    if (header->magic != PSF1_FONT_MAGIC) {
+	    ;
+	    ; // This mean magic number is not as expected
     }
-    /* get the glyph for the character. If there's no
-       glyph for a given character, we'll display the first glyph. */
-    unsigned char *glyph =
-     (unsigned char*)&_binary_font_psf_start +
-     font->headersize +
-     (c>0&&c<font->numglyph?c:0)*font->bytesperglyph;
-    /* calculate the upper left corner on screen where we want to display.
-       we only do this once, and adjust the offset later. This is faster. */
-    int offs =
-        (cy * font->height * framebuffer->pitch) +
-        (cx * (font->width + 1) * sizeof(PIXEL));
-    /* finally display pixels according to the bitmap */
-    int x,y, line,mask;
-    for(y=0;y<font->height;y++){
-        /* save the starting position of the line */
-        line=offs;
-        mask=1<<(font->width-1);
-        /* display a row */
-        for(x=0;x<font->width;x++){
-            *((PIXEL*)(fb_ptr + line)) = *((unsigned int*)glyph) & mask ? fg : bg;
-            /* adjust to the next pixel */
-            mask >>= 1;
-            line += sizeof(PIXEL);
+    size_t blob_size = (size_t)(_binary_font_psf_end - _binary_font_psf_start);
+    // Still a work in progress
+    uint32_t ng = (header->fontMode & 1u) ? 512u : 256u;
+    F.width = 8u;
+    F.height = header->characterSize;
+    F.numglyph = ng;
+    F.bytes_per_glyph = header->characterSize;
+    F.glyphs = base + sizeof(*header);
+
+    // Add frame buffer here
+    //struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
+    uint8_t *fb_base = (uint8_t *)framebuffer->address;
+    // fb_ptr[r * (framebuffer->pitch / 4) + c] = 0xffffff;
+    
+    unsigned char ch = 'A';
+    uint32_t idx = psf1_index_ascii(&F,ch);
+    const uint8_t *glyph = psf1_glyph_ptr(&F, idx);
+
+    // uint32_t fg = 0xFFFFFFFFu;
+    // uint32_t bg = 0x00000000u;
+    int px = 100, py = 100;
+
+    for (uint32_t row = 0; row < F.height; ++row) {
+        uint8_t bits = glyph[row];
+        uint8_t *dst_row =
+            fb_base +
+            (uint64_t)(py + (int)row) * framebuffer->pitch +
+            (uint64_t)px * 4;
+
+        for (uint32_t x = 0; x < 8; ++x) {
+            uint8_t on = (uint8_t)((bits >> (7u - x)) & 1u);
+            uint32_t *dst_px = (uint32_t *)(dst_row + x * 4);
+            *dst_px = on ? fg : bg;
         }
-        /* adjust to the next line */
-        glyph += bytesperline;
-        offs  += framebuffer->pitch;
     }
+    return &F;
 }
 
 // The following will be our kernel's entry point.
@@ -189,7 +224,7 @@ void kmain(void) {
     int c = 18;
     printRC(r,c);
     printRC(69,420);
-    putchar(0,0,0,0xffffff,0x000000);
+    putchar(4,4,4,0xffffff,0x000000);
     // Note: we assume the framebuffer model is RGB with 32-bit pixels.
     for (size_t i = 0; i < 100; i++) {
         volatile uint32_t *fb_ptr = framebuffer->address;

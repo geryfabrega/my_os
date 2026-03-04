@@ -141,7 +141,7 @@ static inline const uint8_t *psf1_glyph_ptr(const PSF1_Font *F, uint32_t idx){
 
 static const PSF1_Font *putchar(
     /* note that this is int, not char as it's a unicode character */
-    unsigned short int c,
+    unsigned char c,
     /* cursor position on screen, in characters not in pixels */
     int cx, int cy,
     /* foreground and background colors, say 0xFFFFFF and 0x000000 */
@@ -163,9 +163,11 @@ static const PSF1_Font *putchar(
     if (header->magic != PSF1_FONT_MAGIC) {
 	    ;
 	    ; // This mean magic number is not as expected
+        return;
     }
     size_t blob_size = (size_t)(_binary_font_psf_end - _binary_font_psf_start);
     // Still a work in progress
+
     uint32_t ng = (header->fontMode & 1u) ? 512u : 256u;
     F.width = 8u;
     F.height = header->characterSize;
@@ -173,18 +175,11 @@ static const PSF1_Font *putchar(
     F.bytes_per_glyph = header->characterSize;
     F.glyphs = base + sizeof(*header);
 
-    // Add frame buffer here
-    //struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
     uint8_t *fb_base = (uint8_t *)framebuffer->address;
-    // fb_ptr[r * (framebuffer->pitch / 4) + c] = 0xffffff;
     
-    unsigned char ch = 'A';
-    uint32_t idx = psf1_index_ascii(&F,ch);
+    uint32_t idx = psf1_index_ascii(&F,c);
     const uint8_t *glyph = psf1_glyph_ptr(&F, idx);
-
-    // uint32_t fg = 0xFFFFFFFFu;
-    // uint32_t bg = 0x00000000u;
-    int px = 100, py = 100;
+    int px = cx, py = cy;
 
     for (uint32_t row = 0; row < F.height; ++row) {
         uint8_t bits = glyph[row];
@@ -220,16 +215,32 @@ void kmain(void) {
     // Fetch the first framebuffer.
     struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
 
-    int r = 14;
-    int c = 18;
-    printRC(r,c);
-    printRC(69,420);
-    putchar(4,4,4,0xffffff,0x000000);
-    // Note: we assume the framebuffer model is RGB with 32-bit pixels.
-    for (size_t i = 0; i < 100; i++) {
-        volatile uint32_t *fb_ptr = framebuffer->address;
-        fb_ptr[i * (framebuffer->pitch / 4) + i] = 0xffffff;
+    char *message = "hello world!";
+    for (int i = 0; message[i] != '\0';i++){
+        putchar(message[i],10 * i,10,0xffffff,0x000000);
     }
+    char *message2 = "Welcome to my operating system";
+    for (int i = 0; message2[i] != '\0';i++){
+        putchar(message2[i],10 * i,30,0xffffff,0x000000);
+    }
+    char *message3 = "Paging is enabled (although its its not implemented...)";
+    for (int i = 0; message3[i] != '\0';i++){
+        putchar(message3[i],10 * i,50,0xffffff,0x000000);
+    }
+    char *message4 = "Progress:.... We have a stack but no heap";
+    for (int i = 0; message4[i] != '\0';i++){
+        putchar(message4[i],10 * i,70,0xffffff,0x000000);
+    }
+    char *message5 = "We have kernal space... no user space...";
+    for (int i = 0; message5[i] != '\0';i++){
+        putchar(message5[i],10 * i,90,0xffffff,0x000000);
+    }
+    char *message6 = "First order of business is to collect free mem for our heap and brk sys call...";
+    for (int i = 0; message6[i] != '\0';i++){
+        putchar(message6[i],10 * i,110,0xffffff,0x000000);
+    }
+    // putchar('e',4,20,0xffffff,0x000000);
+    // Note: we assume the framebuffer model is RGB with 32-bit pixels.
 
     // We're done, just hang...
     hcf();
